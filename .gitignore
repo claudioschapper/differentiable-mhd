@@ -1,0 +1,20 @@
+# data & large artifacts
+data/
+*.h5
+*.npz
+
+# checkpoints
+checkpoints/
+*.ckpt
+
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
