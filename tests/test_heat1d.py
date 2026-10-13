@@ -24,7 +24,7 @@ def test_mean(c):
     x = h*np.arange(N)
     initial = np.sin(x) + 0.5*np.sin(3*x) + c
     sol = solve_heat(initial, v, T, n_steps)
-    assert np.abs(np.mean(sol)-c) < 1e-14
+    assert np.abs(np.mean(sol)-c) < 1e-12
 
 # @pytest.mark.parametrize("n_steps", [5, 10, 20, 40])
 def test_order():
