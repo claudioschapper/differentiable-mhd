@@ -58,7 +58,6 @@ def test_order():
     N = lambda w: mu*w**2
     analytic = np.array([1/(mu/lam+(1-mu/lam)*np.exp(lam))])
     n_steps = [10, 20, 40, 80]
-    errs = np.zeros(len(n_steps))
     for a, steps in enumerate(n_steps):
         y = np.array([1], complex)
         dt = T/steps
@@ -68,4 +67,23 @@ def test_order():
         if a > 0:
             assert np.abs((np.log(preverr/err) - np.log(16))/np.log(16)) < 0.05
         preverr = err
-    
+
+def test_stability_and_blowup():
+    """uses the bernoulli equation to test stability of IF stepper as opposed to plain rk4"""
+    T = 1
+    lam = 70
+    mu = 1
+    L = np.array([-lam])
+    N = lambda w: mu*w**2
+    analytic = lambda t: np.array([1/(mu/lam+(1-mu/lam)*np.exp(lam*t))])
+    n_steps = 20
+    y = np.array([1], complex)
+    v = np.array([1], complex)
+    dt = T/n_steps
+    for i in range(n_steps//5):
+        if i > n_steps//10:
+            assert np.abs( analytic(i*dt) - y)/np.abs(analytic(i*dt)) < 1e-3 
+            assert not( np.abs( analytic(i*dt) - v)/np.abs(analytic(i*dt)) <= 10)
+        y = if_step(y, L, N, dt)
+        v = rk4_step(lambda t, y: -lam*y + mu*y**2, i*dt, v, dt)
+        
