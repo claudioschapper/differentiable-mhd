@@ -42,6 +42,7 @@ class Grid:
     mask_twothirds: np.ndarray
     @classmethod 
     def make(cls, L, N):
+        assert N%2 == 0
         x = L*np.arange(N)/N
         x.flags.writeable = False
         # need to separate into two wavenumber arrays, as we need to handle the nyquist mode which should be zero for odd derivatives
