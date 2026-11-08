@@ -1,6 +1,6 @@
 from dmhd.timestep import rk4_step
 from dmhd.timestep import if_step
-from dmhd.spectral import wavenumbers
+from dmhd.spectral import wavenumbers, Grid
 import numpy as np
 import pytest
 
@@ -86,4 +86,32 @@ def test_stability_and_blowup():
             assert not( np.abs( analytic(i*dt) - v)/np.abs(analytic(i*dt)) <= 10)
         y = if_step(y, L, N, dt)
         v = rk4_step(lambda t, y: -lam*y + mu*y**2, i*dt, v, dt)
-        
+
+def test_recordingN():
+    L = 2*np.pi
+    N = 24
+    g = Grid.make(L, N)
+    kx = g.kx_even_der
+    ky = g.ky_even_der
+    Li = -(kx**2+ky**2)
+    u =  np.random.default_rng(0).standard_normal((N, N))
+    u_hat = np.fft.fft2(u)
+    shape = u_hat.shape
+    inputs = []
+    dt = 1e-5
+    E = np.exp(Li*dt/2)
+    def N_rec(f):
+        inputs.append(f)
+        return np.zeros(shape)
+    
+    u_hat_step = if_step(np.fft.fftn(u), Li, N_rec, dt)
+    assert len(inputs) == 4
+    assert np.max(np.abs(inputs[0] - np.fft.ifft2(u_hat))) < 1e-12
+    assert np.max(np.abs(inputs[1] - np.fft.ifft2(E*u_hat))) < 1e-12
+    assert np.max(np.abs(inputs[2] - np.fft.ifft2(E*u_hat))) < 1e-12
+    assert np.max(np.abs(inputs[3] - np.fft.ifft2((E**2)*u_hat))) < 1e-12
+    assert np.max(np.abs(u_hat_step- (E**2)*u_hat)) < 1e-12
+
+
+    
+    
