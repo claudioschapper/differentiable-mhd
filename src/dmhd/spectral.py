@@ -96,3 +96,12 @@ def poisson_inversion(u, grid):
     poi_inv_u_hat = u_hat/(kx**2+ky**2)
     poi_inv_u_hat[0][0] = 0
     return np.fft.ifft2(poi_inv_u_hat)
+
+def jacobian(psi, omega, grid):
+    psi_x = partial_x(psi, grid).real
+    psi_y = partial_y(psi, grid).real
+    omega_x = partial_x(omega, grid).real
+    omega_y = partial_y(omega, grid).real
+    return np.fft.fft2(psi_x*omega_y - psi_y*omega_x)*grid.mask_twothirds
+
+

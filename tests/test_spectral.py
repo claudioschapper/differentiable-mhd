@@ -1,4 +1,4 @@
-from dmhd.spectral import diffspec, diffspec_gen, Grid, partial_x, partial_y, laplacian, poisson_inversion
+from dmhd.spectral import diffspec, diffspec_gen, Grid, partial_x, partial_y, laplacian, poisson_inversion, jacobian
 import numpy as np
 import pytest
 @pytest.mark.parametrize("N", [16, 32, 64])
@@ -97,4 +97,19 @@ def test_mask_symmetry(N):
     sym = mask[np.ix_(-np.arange(N)%N, -np.arange(N)%N )]
     assert np.array_equal(sym, mask)
 
+def test_jacobian():
+    L = 2*np.pi
+    N = 24
+    g = Grid.make(L,N)
+    X, Y = g.coords
+    psi = np.sin(2*X)*np.cos(Y)
+    omega = np.cos(X)*np.sin(3*Y)
+    J_ref = 1/8*(5*(np.cos(X-2*Y)+np.cos(3*X+4*Y)+np.cos(3*X-4*Y)+np.cos(X+2*Y))+
+                        7*(np.cos(3*X-2*Y)+np.cos(3*X+2*Y)+np.cos(X+4*Y)+np.cos(X-4*Y)))
+    J_hat = jacobian(psi, omega, g)
 
+
+    assert np.max(abs(np.fft.ifft2(J_hat).real-J_ref)) < 1e-12
+    assert np.max(abs(np.fft.ifft2(J_hat).imag)) < 1e-13
+    assert np.max(abs(J_ref-(6*np.cos(2*X)*np.cos(Y)*np.cos(X)*np.cos(3*Y)-np.sin(2*X)*np.sin(Y)*np.sin(X)*np.sin(3*Y)))) < 1e-13
+    assert np.max(abs(J_hat+jacobian(omega, psi, g))) < 1e-13
