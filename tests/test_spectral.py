@@ -113,3 +113,40 @@ def test_jacobian():
     assert np.max(abs(np.fft.ifft2(J_hat).imag)) < 1e-13
     assert np.max(abs(J_ref-(6*np.cos(2*X)*np.cos(Y)*np.cos(X)*np.cos(3*Y)-np.sin(2*X)*np.sin(Y)*np.sin(X)*np.sin(3*Y)))) < 1e-13
     assert np.max(abs(J_hat+jacobian(omega, psi, g))) < 1e-13
+
+@pytest.mark.parametrize("N", [24, 28, 32])
+@pytest.mark.parametrize("psi_seed", [0, 1, 2])
+@pytest.mark.parametrize("omega_seed", [3, 4, 5])
+def test_jac_mask(N, psi_seed, omega_seed):
+    L = 2*np.pi
+
+    g = Grid.make(L,N)
+    modes = np.fft.fftfreq(N, d=1/N)
+    mx = np.meshgrid(modes, np.zeros(N), indexing="ij")[0]
+    my = np.meshgrid(np.zeros(N), modes, indexing="ij")[1]
+    M = (N-1)//3
+    mask = np.logical_and(np.abs(mx) <=M, np.abs(my) <= M )
+    not_mask = np.logical_or(np.abs(mx) > M, np.abs(my) > M )
+
+    def jac_no_mask(psi, omega, grid):
+        psi_x = partial_x(psi, grid).real
+        psi_y = partial_y(psi, grid).real
+        omega_x = partial_x(omega, grid).real
+        omega_y = partial_y(omega, grid).real
+        return np.fft.fft2(psi_x*omega_y - psi_y*omega_x)
+
+    g = Grid.make(L,N)
+    psi =  np.random.default_rng(psi_seed).standard_normal((N, N))
+    psi_hat = np.fft.fft2(psi)*g.mask_twothirds
+    psi = np.fft.ifft2(psi_hat).real
+
+    omega =  np.random.default_rng(omega_seed).standard_normal((N, N))
+    omega_hat = np.fft.fft2(omega)*g.mask_twothirds
+    omega = np.fft.ifft2(omega_hat).real
+
+    jac_hat = jacobian(psi, omega, g)
+    jac_no_mask_hat = jac_no_mask(psi, omega, g)
+
+    assert np.max(np.abs(jac_hat*(not_mask))) == 0
+    assert np.max(np.abs(jac_no_mask_hat*(not_mask)/np.max(np.abs(jac_no_mask_hat*mask)))) > 0.1
+    assert np.max(np.abs(jac_no_mask_hat*mask-jac_hat)) < 1e-12
