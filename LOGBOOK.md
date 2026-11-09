@@ -167,4 +167,56 @@ Goal: the nonlinear term J(psi, omega), verified against a hand-derived result b
 - Tolerances: the first thresholds were guesses; the measured error was 7.99e-15 against a threshold of 1e-15. 1e-14 would leave about 25% margin, which is fragile across NumPy and platforms, so the three tight ones were loosened to 1e-13. A real bug here is O(1), so 1e-13 loses nothing.
 - Not done: the kx/ky swap control, and the exact-spectrum check (16 nonzero modes at N^2 c / 2). The mask is not exercised by this pair on purpose.
 - Committed: (hash)
-NEXT: Test B in tests/test_conservation.py. Band-limit random psi and omega to M by masking their spectrum first, then <psi J> = <omega J> = 0 to roundoff (relative to ||psi|| ||J||, so the tolerance means something). Controls from the plan: mask removed with content up to N/2 must fail; the cutoff "<= N/3" at N = 30 must fail. Still open from before: the immutability test on Grid and the kx/ky swap control. Then NSE: Taylor-Green (J must vanish, omega proportional to psi), viscous decay against e^{-2 nu t}, dt convergence slope 4.
+## 2026-11-09 (Jacobian conservation, Test B)
+Goal: the nonlinear term conserves energy and enstrophy exactly on the grid, with controls showing the test can fail.
+
+### What is tested
+- E = 1/2 <psi omega>, Z = 1/2 <omega^2>; dE/dt = <psi omega_t> (-lap is self-adjoint), so the nonlinear contribution is <psi J(psi, omega)>, and dZ/dt gives <omega J(psi, omega)>. These are exactly the integrals the test checks. The weights are the functional derivatives, dE/domega = psi, dZ/domega = omega.
+- Why they vanish: int f J(g, h) is cyclic in (f, g, h) (write J(g, h) = d_x(g h_y) - d_y(g h_x), integrate by parts, use antisymmetry). If two slots hold the same field, the integral equals its own negative. This holds for ANY pair (psi, omega), so psi and omega are drawn independently and are not tied by omega = -lap(psi). Physically: v . grad(psi) = 0, advection does no work; enstrophy is a Casimir (int F(omega) conserved for every F).
+- Why it holds exactly on the grid: mode level, <psi J> = sum over p + q + r = 0 of (p x q) psi_hat(p) omega_hat(q) psi_hat(r); the terms cancel in pairs, but only if p + q + r = 0 exactly. The grid cannot tell k from k +- N, so triples with p + q + r = +-N would be wrongly counted as zero-sum. With |m| <= M = (N - 1)//3 the largest sum is 3M < N, so none exist. That is the 2/3 rule, and it only protects band-limited input.
+
+### Test (tests/test_conservation.py::test_jac_conservation)
+- N in {24, 30, 32}, 3 psi seeds x 3 omega seeds = 27 runs. Random real fields, band-limited by zeroing the spectrum outside `g.mask_twothirds`; imaginary part of the result asserted at roundoff before `.real`.
+- Asserted: |<psi J>| / (rms psi rms J) < 1e-14 and |<omega J>| / (rms omega rms J) < 1e-14 (measured maximum 8.9e-17, below machine epsilon because the mean of N^2 random-sign terms cancels); and rms(J) / (rms|grad psi| rms|grad omega|) > 0.1 as a guard against a Jacobian that returns zeros (so conservation would hold trivially). By Cauchy-Schwarz the ratio lies in [0, 1].
+- Measured guard ratio 0.37 to 0.43. For independent isotropic gradients the unmasked value would be 1/sqrt(2) = 0.71; the mask removes the modes of J above M (J has modes up to 2M), which is why it is lower.
+
+### Controls
+- Wrong bracket (psi_x omega_y + psi_y omega_x): all 27 runs fail, relative error 1.2e-3 to 9.1e-2 against a 1e-16 threshold.
+- Wrong cutoff (M = N//3 for both the input band-limiting and the Jacobian mask, via `dataclasses.replace` on the frozen Grid): fails at N = 24 and N = 30 (relative error 4.4e-3 to 3.0e-2), passes at N = 32, where N//3 = (N - 1)//3 so the two masks are identical. Kept permanently as `test_jac_failure` (N in {24, 30}, asserts the error is above 1e-4).
+- Inputs not band-limited (content to N/2): not run separately. The failure mechanism is the same wrapped triples, and the wrong-cutoff control is the harder case (only a sliver of triples, those with all three modes at exactly +-N/3, can wrap), so bulk aliasing fails by more.
+- Flipping the sign of J is NOT a control here: -J conserves energy and enstrophy equally.
+
+### Mistakes worth not repeating
+- First guard ratio used mean(|grad|^2) without the square root. Symptom: values 0.01 to 0.03 drifting with N (the mean square grows like N^2), which a scale-free ratio cannot do. Corrected value 0.37.
+- `.real` inside partial_x, partial_y, laplacian and poisson_inversion makes `test_imaginary` vacuous (the imaginary part of a real array is exactly 0) and hides the Nyquist-zeroing control (O(1) imaginary parts). Reverted; `.real` is taken at the call sites. Class of bug: a projection moved into a primitive hides the signal a test relied on.
+- `dataclasses.replace(g, ...)` returns a NEW frozen grid; the first attempt discarded the return value, so the "bad mask" control changed nothing and 27 tests still passed. A test that cannot fail is not a control. Also, control code was left inside `jacobian` in the source and silently overrode the mask for every caller; removed.
+- Tight thresholds set 10 to 25 percent above the measurement are fragile; set them one to two orders above the measured maximum instead.
+- Committed: (hash)
+## 2026-11-10 (mask inside `jacobian`)
+Goal: show that `jacobian` zeroes the Fourier array outside the 2/3 band, with a test that fails both when the mask is missing and when it is too narrow.
+
+### Why a dedicated test
+The product of two fields band-limited to M has modes out to 2M. With 3M < N the wrapped modes land outside the band, so the in-band modes are exact and the mask discards the rest. Test A (J modes <= 4 < M) and Test B (inputs band-limited, so <psi J> only reads J in band) cannot see a missing mask. If it were missing, the symptom would appear only in long runs, as spectral pile-up near the cutoff and energy drift from aliased energy folding back.
+
+### Test (tests/test_spectral.py::test_jac_mask)
+- N in {24, 28, 32} x 3 psi seeds x 3 omega seeds = 27 runs. N = 28 is the tight case (3M = N - 1).
+- Region |m| <= M = (N-1)//3 built from `fftfreq` integer mode numbers, independent of `g.mask_twothirds`. Inputs band-limited by zeroing outside the Grid mask.
+- Unmasked reference computed inside the test from partial_x, partial_y and fft2, without calling `jacobian`.
+- Asserts: (1) max|J_hat| outside the region == 0 exactly. (2) max|unmasked outside| / max|unmasked inside| > 0.1, so that (1) can fail. (3) max|unmasked * mask - J_hat| < 1e-12.
+
+### Measured
+- Ratio in (2): 1.06 to 2.05 over the runs visible in the terminal, no trend with N, so the 0.1 threshold has about a 10x margin. Physically: the product's spectrum is a convolution out to 2M, so the content outside the band is as large as the content inside; the mask throws away a lot.
+- First version of (2) was an absolute threshold (> 10) in unnormalised fft2 units; measured values were ~600 to ~3000 and grew like N^2. Replaced by the ratio, which is scale-free.
+
+### Controls
+- Mask multiplication removed from `jacobian`: (1) fails 27/27, outside magnitude ~600 to ~3000.
+- Grid mask narrowed by one mode (M - 1): (3) fails 27/27, magnitude ~270 to ~1900 (N = 24: ~270-380, N = 28: ~790-1060, N = 32: ~1140-1910), while (1) still passes. So (1) guards a missing or too-wide mask, (3) a too-narrow one.
+- Both control edits reverted; `git diff src/` clean before the commit.
+
+### Notes / mistakes worth not repeating
+- (3) is nearly tautological: both sides come from the same operations, so the difference is exactly 0 and the 1e-12 carries no margin. Its only value is catching in-band truncation, which is why it needed its own control.
+- Absolute thresholds on unnormalised FFT quantities drift with N; use ratios.
+- Control edits live in the source file while running; revert and check `git diff src/` every time (second time this has needed saying).
+- The test is about `jacobian`'s contract, not conservation, so it lives in test_spectral.py.
+Committed: (hash)
+NEXT: (1) Grid immutability test (FrozenInstanceError, read-only arrays incl. mask_twothirds). (2) nse2d.py: Taylor-Green first (J must vanish, omega proportional to psi), then viscous decay against e^{-2 nu t} and dt-convergence slope 4.
