@@ -1,10 +1,10 @@
 from dmhd.spectral import diffspec, diffspec_gen, Grid, partial_x, partial_y, laplacian, poisson_inversion, jacobian
 import numpy as np
 import pytest
+
+
 @pytest.mark.parametrize("N", [16, 32, 64])
 @pytest.mark.parametrize("k", [1, 3, 5])
-
-
 def test_diff(N, k):
     h = 2*np.pi/N
     x = h*np.arange(N)
