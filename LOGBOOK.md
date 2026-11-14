@@ -219,4 +219,38 @@ The product of two fields band-limited to M has modes out to 2M. With 3M < N the
 - Control edits live in the source file while running; revert and check `git diff src/` every time (second time this has needed saying).
 - The test is about `jacobian`'s contract, not conservation, so it lives in test_spectral.py.
 Committed: (hash)
-NEXT: (1) Grid immutability test (FrozenInstanceError, read-only arrays incl. mask_twothirds). (2) nse2d.py: Taylor-Green first (J must vanish, omega proportional to psi), then viscous decay against e^{-2 nu t} and dt-convergence slope 4.
+## 2026-11-13 .. 2026-11-14
+Goal: first validation tests for `nse2d.py`: the linear part, then the nonlinear wiring and sign.
+
+### Conventions fixed
+- ω = ∂ₓv_y − ∂_yvₓ, ω = −∇²ψ, v = (ψ_y, −ψ_x), J = ψₓω_y − ψ_yωₓ.
+- v·∇ω = −J, so ∂ₜω = +J + ν∇²ω and `nonlinear` returns +J.
+- State, input and output are vorticity. Zero mean flow assumed (k = 0 mode of v is conserved and removable by a Galilean shift on a periodic box). Not true for a mean B field in MHD, which changes the physics; ⟨B⟩ = 0 must be assumed there.
+- Decision: no immutability test. `Grid` stays frozen with read-only arrays (incl. `mask_twothirds`); the test would only catch a forgotten field later.
+
+### Tests added (tests/test_nse.py)
+- `test_linear`: N ≡ 0 via monkeypatch of `dmhd.solvers.nse2d.nonlinear`, calls `solve_nse`, compares with ω₀e^{−13ν(2π/l)²T} for ω₀ = sin(2kx)cos(3ky). Parametrised over N, n_steps (1 to 1000) and l ∈ {2π, 3}. Guard: decay > 0.01.
+- `test_nonlinear`: ω = cos(3x+y) + cos(2x+y) (wavevectors non-parallel, |k|² = 10 and 5). Hand-derived J = −(1/20)[cos x − cos(5x+2y)], amplitude independent of l. Checks the full Fourier array against the FFT of the hand field, that the four predicted modes (±1,0), (±5,±2) are nonzero, and that everything else is ~0. All relative to max|ĵ_hand|.
+
+### Measured
+- Linear control (drop k_y²): error 0.297 predicted, 0.2967 measured (l = 2π, ν = 0.05); 0.358 predicted, 0.3581 measured (l = 3, N = 24). Error identical for 1 to 1000 steps (integrating factor is exact, so no dt dependence).
+- Sign-flip control in `nonlinear`: relative error 1.9999999999999993 to 2.0 for every N and l, which is exactly 2|J|.
+- Skip Poisson inversion: J(ω, ω) = 0, max = 0.0.
+- x/y swapped in `predicted`: |ĵ| at the swapped modes ~1e-15, against a threshold of N²/80.
+
+### Controls
+- Dropped k_y² in `L` (in `nse2d.py`, not in the test): fails 24/24.
+- −J, skipped Poisson inversion, swapped mode indexing: each fails, all reverted, `git diff src/` checked.
+- Mask removed: not a useful control here. All content (|m| ≤ 6) lies inside the mask and below Nyquist, so the output is unchanged. The mask is covered by the `jacobian` test in `test_spectral.py`.
+
+### Notes / mistakes worth not repeating
+- The first `test_linear` rebuilt its own L and time loop, so controls on it proved nothing about `nse2d.py`. Always call the function under test; monkeypatch what you need to switch off.
+- The `decay` guard caught ν = 0.2 at l = 3 (decay 1e-5): the factor (2π/l)² makes a box with l < 2π much more diffusive.
+- Mode prediction for J: self-interactions vanish (ω_a ∝ ψ_a), and cos × cos gives sum and difference modes. I first listed (6,2), (4,2) and missed (1,0).
+- A mode pair is (m, n) and (−m, −n). Writing (±5, 2) is wrong.
+- Use a bool array as a mask, not a float one.
+- Wavenumber for mode m is 2πm/l, not l m/2π. They agree at l = 2π and hide the bug.
+- Unnormalised `fft2` coefficients scale as N², so use ratios. Take the scale from the reference, not from the output under test.
+
+Committed: (hash)
+NEXT: (1) Taylor–Green: N(ω₀) at roundoff, then ω₀e^{−2ν(2π/l)²T} for l = 2π and 3, small and large dt. It does not test the N coupling, since N ≈ 0 on that field. (2) dt self-convergence on the `test_nonlinear` field: ratio → 16, fixed n, dt below advective CFL. (3) Energy budget dE/dt = −2νZ with the mask on.
