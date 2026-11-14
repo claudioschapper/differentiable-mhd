@@ -252,5 +252,5 @@ Goal: first validation tests for `nse2d.py`: the linear part, then the nonlinear
 - Wavenumber for mode m is 2πm/l, not l m/2π. They agree at l = 2π and hide the bug.
 - Unnormalised `fft2` coefficients scale as N², so use ratios. Take the scale from the reference, not from the output under test.
 
-Committed: (hash)
+Committed: 734f84d
 NEXT: (1) Taylor–Green: N(ω₀) at roundoff, then ω₀e^{−2ν(2π/l)²T} for l = 2π and 3, small and large dt. It does not test the N coupling, since N ≈ 0 on that field. (2) dt self-convergence on the `test_nonlinear` field: ratio → 16, fixed n, dt below advective CFL. (3) Energy budget dE/dt = −2νZ with the mask on.
